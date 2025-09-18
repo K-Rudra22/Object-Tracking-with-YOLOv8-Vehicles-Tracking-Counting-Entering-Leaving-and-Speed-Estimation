@@ -1,6 +1,7 @@
 import streamlit as st
 import cv2, math, time, pandas as pd, numpy as np
 from ultralytics import YOLO
+import tempfile
 import os
 import io
 
@@ -134,5 +135,6 @@ if uploaded_file is not None:
     
     # Clean up the temporary file
     os.remove(VIDEO)
+
 
 
