@@ -26,13 +26,20 @@ if uploaded_file is not None:
 
     st.video(video_path)
 
+    # --------------------------
+    # Step 2: Scaling input
+    # --------------------------
+    st.markdown("### Enter Pixel-to-Meter Scale")
+    st.write("Example: if 50 pixels ≈ 1 meter in your video, enter 50.")
+    px_per_meter = st.number_input("Pixels per meter", value=50.0, min_value=1.0)
+
     if st.button("▶️ Start Processing"):
         cap = cv2.VideoCapture(video_path)
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        out_path = "output_simple.mp4"
+        out_path = "output_kmph.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
@@ -58,23 +65,24 @@ if uploaded_file is not None:
                     x1, y1, x2, y2 = map(int, box)
                     cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
 
-                    # Pixel-based speed (no homography)
-                    speed = None
+                    # Speed in km/h using scale
+                    speed_kmph = None
                     prev = history.get(tid, None)
                     if prev is not None:
                         (px, py, pframe) = prev
                         dist_px = math.hypot(cx - px, cy - py)
+                        dist_m = dist_px / px_per_meter  # convert px → meters
                         time_s = max((frame_id - pframe) / fps, 1e-6)
-                        speed = dist_px / time_s  # pixels per second
-                        rows.append([int(tid), model.names[int(cls)], frame_id, round(speed, 2)])
+                        speed_kmph = (dist_m / time_s) * 3.6  # m/s → km/h
+                        rows.append([int(tid), model.names[int(cls)], frame_id, round(speed_kmph, 2)])
 
                     history[tid] = (cx, cy, frame_id)
                     vehicle_counts[int(cls)] += 1
 
                     # Draw label
                     label = f"ID:{int(tid)} {model.names[int(cls)]}"
-                    if speed:
-                        label += f" {int(speed)} px/s"
+                    if speed_kmph:
+                        label += f" {int(speed_kmph)} km/h"
 
                     (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
                     cv2.rectangle(frame, (x1, y1 - 25), (x1 + tw, y1), (0, 0, 0), -1)
@@ -101,10 +109,9 @@ if uploaded_file is not None:
 
         # Export CSV
         csv_path = "vehicle_log.csv"
-        df = pd.DataFrame(rows, columns=["ID", "Class", "Frame", "Speed_px/s"])
+        df = pd.DataFrame(rows, columns=["ID", "Class", "Frame", "Speed_km/h"])
         df.to_csv(csv_path, index=False)
 
         st.dataframe(df)
         st.download_button("📥 Download CSV", data=open(csv_path, "rb"),
                            file_name="vehicle_log.csv", mime="text/csv")
-
