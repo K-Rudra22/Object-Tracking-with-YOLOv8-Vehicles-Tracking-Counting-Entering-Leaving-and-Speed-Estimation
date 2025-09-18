@@ -6,8 +6,9 @@ import io
 
 # --- Helper functions and constants ---
 # Your existing draw_badge function and class_names dictionary
-def draw_badge(...):
-    # ... your function code ...
+def draw_badge(frame, text, pos, bg_color=(0,0,0), text_color=(255,255,255), scale=0.7, thickness=2):
+    # The rest of your function code goes here
+    ...
     pass
 
 class_names = {2:"car", 3:"motorbike", 5:"bus", 7:"truck"}
@@ -133,4 +134,5 @@ if uploaded_file is not None:
     
     # Clean up the temporary file
     os.remove(VIDEO)
+
 
