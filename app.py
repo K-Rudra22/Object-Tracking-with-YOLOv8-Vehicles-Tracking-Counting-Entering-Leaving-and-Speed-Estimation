@@ -1,26 +1,17 @@
-import pkg_resources
 import streamlit as st
-
-# Debug: Show installed packages
-pkgs = [p.project_name + "==" + p.version for p in pkg_resources.working_set if "opencv" in p.project_name.lower()]
-st.write("Installed OpenCV packages:", pkgs)
-
 import cv2
-st.write("OpenCV version:", cv2.__version__)
-
-import streamlit as st
 import tempfile
 import pandas as pd
 import numpy as np
 import math
 from ultralytics import YOLO
-from streamlit_drawable_canvas import st_canvas  # for interactive point selection
+from streamlit_drawable_canvas import st_canvas
 
 # --------------------------
 # Load YOLO model
 # --------------------------
 model = YOLO("yolov8n.pt")
-VEHICLE_CLASSES = [2, 3, 5, 7]   # car, motorbike, bus, truck
+VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorbike, bus, truck
 
 st.title("🚦 Vehicle Counting & Speed Tracking (with Homography Calibration)")
 
@@ -38,41 +29,44 @@ if uploaded_file is not None:
     ret, first_frame = cap.read()
     cap.release()
 
-    st.markdown("### Step 2: Pick 4 points on the road (e.g. rectangle crosswalk or lane markings)")
-    st.image(first_frame, caption="Click on 4 points in order: top-left, top-right, bottom-left, bottom-right")
+    if not ret:
+        st.error("❌ Could not read video file. Please upload a valid video.")
+    else:
+        st.markdown("### Step 2: Pick 4 points on the road (top-left, top-right, bottom-left, bottom-right)")
+        st.image(first_frame, caption="Click 4 points in order")
 
-    # Interactive canvas for calibration
-    canvas_result = st_canvas(
-        fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="red",
-        background_image=first_frame, update_streamlit=True,
-        height=first_frame.shape[0], width=first_frame.shape[1],
-        drawing_mode="point", key="canvas"
-    )
+        # Interactive canvas for calibration
+        canvas_result = st_canvas(
+            fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="red",
+            background_image=first_frame, update_streamlit=True,
+            height=first_frame.shape[0], width=first_frame.shape[1],
+            drawing_mode="point", key="canvas"
+        )
 
-    # Extract selected points
-    if canvas_result.json_data is not None:
-        objects = canvas_result.json_data["objects"]
-        if len(objects) == 4:
-            st.success("✅ 4 points selected")
-            image_points = np.array([[obj["left"], obj["top"]] for obj in objects], dtype=np.float32)
+        # Extract selected points
+        if canvas_result.json_data is not None:
+            objects = canvas_result.json_data["objects"]
+            if len(objects) == 4:
+                st.success("✅ 4 points selected")
+                image_points = np.array([[obj["left"], obj["top"]] for obj in objects], dtype=np.float32)
 
-            # Ask user for real-world distances
-            st.markdown("### Step 3: Enter real-world rectangle dimensions (in meters)")
-            width_m = st.number_input("Width (m)", value=10.0)
-            height_m = st.number_input("Height (m)", value=20.0)
+                # Ask user for real-world distances
+                st.markdown("### Step 3: Enter real-world rectangle dimensions (in meters)")
+                width_m = st.number_input("Width (m)", value=10.0)
+                height_m = st.number_input("Height (m)", value=20.0)
 
-            world_points = np.array([
-                [0, 0],
-                [width_m, 0],
-                [0, height_m],
-                [width_m, height_m]
-            ], dtype=np.float32)
+                world_points = np.array([
+                    [0, 0],
+                    [width_m, 0],
+                    [0, height_m],
+                    [width_m, height_m]
+                ], dtype=np.float32)
 
-            H, _ = cv2.findHomography(image_points, world_points)
+                H, _ = cv2.findHomography(image_points, world_points)
 
-            # Store calibration
-            st.session_state["H"] = H
-            st.success("Homography matrix computed ✅")
+                # Store calibration
+                st.session_state["H"] = H
+                st.success("Homography matrix computed ✅")
 
 # --------------------------
 # Step 4: Process video
@@ -109,7 +103,7 @@ if uploaded_file is not None and "H" in st.session_state:
             frame_id += 1
 
             results = model.track(frame, persist=True, classes=VEHICLE_CLASSES, conf=0.35)
-            if results[0].boxes.id is not None:
+            if results and results[0].boxes.id is not None:
                 boxes = results[0].boxes.xyxy.cpu().numpy()
                 ids = results[0].boxes.id.cpu().numpy()
                 clss = results[0].boxes.cls.cpu().numpy()
@@ -131,7 +125,6 @@ if uploaded_file is not None and "H" in st.session_state:
                         rows.append([int(id), model.names[int(cls)], frame_id, round(speed_kmph, 2)])
 
                     history[id] = (X, Y, frame_id)
-
                     vehicle_counts[int(cls)] += 1
 
                     # Draw labels with background
@@ -162,6 +155,7 @@ if uploaded_file is not None and "H" in st.session_state:
         st.success("✅ Processing complete")
         st.video(out_path)
 
+        # Export CSV
         csv_path = "vehicle_log.csv"
         df = pd.DataFrame(rows, columns=["ID", "Class", "Frame", "Speed_km/h"])
         df.to_csv(csv_path, index=False)
@@ -169,5 +163,3 @@ if uploaded_file is not None and "H" in st.session_state:
         st.dataframe(df)
         st.download_button("📥 Download CSV", data=open(csv_path, "rb"),
                            file_name="vehicle_log.csv", mime="text/csv")
-
-
