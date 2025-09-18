@@ -6,6 +6,7 @@ import numpy as np
 import math
 from ultralytics import YOLO
 from streamlit_drawable_canvas import st_canvas
+from PIL import Image
 
 # --------------------------
 # Load YOLO model
@@ -14,6 +15,11 @@ model = YOLO("yolov8n.pt")
 VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorbike, bus, truck
 
 st.title("🚦 Vehicle Counting & Speed Tracking (with Homography Calibration)")
+
+# Sidebar options
+st.sidebar.header("⚙️ Processing Options")
+mode = st.sidebar.radio("Select Mode:", ["Full Accuracy", "Fast Mode (skip frames)"])
+skip_rate = 1 if mode == "Full Accuracy" else st.sidebar.slider("Skip every N frames", 2, 10, 3)
 
 # --------------------------
 # Step 1: Upload video
@@ -35,10 +41,14 @@ if uploaded_file is not None:
         st.markdown("### Step 2: Pick 4 points on the road (top-left, top-right, bottom-left, bottom-right)")
         st.image(first_frame, caption="Click 4 points in order")
 
+        # Convert cv2 (BGR) -> PIL (RGB) for st_canvas
+        first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+        first_frame_pil = Image.fromarray(first_frame_rgb)
+
         # Interactive canvas for calibration
         canvas_result = st_canvas(
             fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="red",
-            background_image=first_frame, update_streamlit=True,
+            background_image=first_frame_pil, update_streamlit=True,
             height=first_frame.shape[0], width=first_frame.shape[1],
             drawing_mode="point", key="canvas"
         )
@@ -101,6 +111,10 @@ if uploaded_file is not None and "H" in st.session_state:
             if not ret:
                 break
             frame_id += 1
+
+            # ⚡ Skip frames if in Fast Mode
+            if skip_rate > 1 and frame_id % skip_rate != 0:
+                continue
 
             results = model.track(frame, persist=True, classes=VEHICLE_CLASSES, conf=0.35)
             if results and results[0].boxes.id is not None:
