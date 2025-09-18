@@ -12,7 +12,7 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt")
 VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorbike, bus, truck
 
-st.title("🚦 Vehicle Counting & Speed Tracking")
+st.title("🚦 Vehicle Counting, Speed, Entry/Exit Tracking")
 
 # --------------------------
 # Step 1: Upload video
@@ -39,15 +39,21 @@ if uploaded_file is not None:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        out_path = "output_kmph.mp4"
+        out_path = "output_final.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
 
         history = {}
+        last_positions = {}   # to detect entry/exit
+        counted_ids = set()   # to avoid double counting
         rows = []
+
         vehicle_counts = {cls: 0 for cls in VEHICLE_CLASSES}
+        entering, leaving = 0, 0
+
         st_frame = st.empty()
         frame_id = 0
+        line_y = height // 2  # horizontal line in the middle
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -71,13 +77,26 @@ if uploaded_file is not None:
                     if prev is not None:
                         (px, py, pframe) = prev
                         dist_px = math.hypot(cx - px, cy - py)
-                        dist_m = dist_px / px_per_meter  # convert px → meters
+                        dist_m = dist_px / px_per_meter
                         time_s = max((frame_id - pframe) / fps, 1e-6)
-                        speed_kmph = (dist_m / time_s) * 3.6  # m/s → km/h
+                        speed_kmph = (dist_m / time_s) * 3.6
                         rows.append([int(tid), model.names[int(cls)], frame_id, round(speed_kmph, 2)])
 
                     history[tid] = (cx, cy, frame_id)
-                    vehicle_counts[int(cls)] += 1
+
+                    # Count unique vehicles
+                    if tid not in counted_ids:
+                        vehicle_counts[int(cls)] += 1
+                        counted_ids.add(tid)
+
+                    # Entry/Exit detection
+                    if tid in last_positions:
+                        prev_y = last_positions[tid]
+                        if prev_y < line_y and cy >= line_y:
+                            entering += 1
+                        elif prev_y > line_y and cy <= line_y:
+                            leaving += 1
+                    last_positions[tid] = cy
 
                     # Draw label
                     label = f"ID:{int(tid)} {model.names[int(cls)]}"
@@ -88,14 +107,17 @@ if uploaded_file is not None:
                     cv2.rectangle(frame, (x1, y1 - 25), (x1 + tw, y1), (0, 0, 0), -1)
                     cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX,
                                 0.6, (0, 255, 0), 2, cv2.LINE_AA)
-
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
             # Top bar with counts
-            cv2.rectangle(frame, (0, 0), (width, 40), (0, 0, 255), -1)
+            cv2.rectangle(frame, (0, 0), (width, 50), (0, 0, 255), -1)
             count_text = " | ".join([f"{model.names[c]}: {vehicle_counts[c]}" for c in vehicle_counts])
-            cv2.putText(frame, count_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX,
+            count_text += f" | Entering: {entering} | Leaving: {leaving}"
+            cv2.putText(frame, count_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, (255, 255, 255), 2, cv2.LINE_AA)
+
+            # Draw the counting line
+            cv2.line(frame, (0, line_y), (width, line_y), (255, 255, 0), 2)
 
             out.write(frame)
             st_frame.image(frame, channels="BGR", use_column_width=True)
@@ -103,15 +125,16 @@ if uploaded_file is not None:
         cap.release()
         out.release()
 
-        # Show results
-        st.success("✅ Processing complete")
-        st.video(out_path)
+        # ✅ Ensure video file is flushed before showing
+        with open(out_path, "rb") as f:
+            st.video(f.read())
 
         # Export CSV
         csv_path = "vehicle_log.csv"
         df = pd.DataFrame(rows, columns=["ID", "Class", "Frame", "Speed_km/h"])
         df.to_csv(csv_path, index=False)
 
+        st.success("✅ Processing complete")
         st.dataframe(df)
         st.download_button("📥 Download CSV", data=open(csv_path, "rb"),
                            file_name="vehicle_log.csv", mime="text/csv")
