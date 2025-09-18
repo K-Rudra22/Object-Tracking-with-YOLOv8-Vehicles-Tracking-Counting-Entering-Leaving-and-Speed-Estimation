@@ -1,5 +1,10 @@
-import streamlit as st
+import pkg_resources
+# Debug: Show installed packages
+pkgs = [p.project_name + "==" + p.version for p in pkg_resources.working_set if "opencv" in p.project_name.lower()]
+st.write("Installed OpenCV packages:", pkgs)
 import cv2
+st.write("OpenCV version:", cv2.__version__)
+import streamlit as st
 import tempfile
 import pandas as pd
 import numpy as np
@@ -160,3 +165,4 @@ if uploaded_file is not None and "H" in st.session_state:
         st.dataframe(df)
         st.download_button("📥 Download CSV", data=open(csv_path, "rb"),
                            file_name="vehicle_log.csv", mime="text/csv")
+
