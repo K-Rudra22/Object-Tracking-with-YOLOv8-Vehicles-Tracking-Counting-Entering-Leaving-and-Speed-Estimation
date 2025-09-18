@@ -12,7 +12,7 @@ from ultralytics import YOLO
 model = YOLO("yolov8n.pt")
 VEHICLE_CLASSES = [2, 3, 5, 7]  # car, motorbike, bus, truck
 
-st.title("🚦 Vehicle Counting & Speed Tracking (No Homography)")
+st.title("🚦 Vehicle Counting & Speed Tracking")
 
 # --------------------------
 # Step 1: Upload video
@@ -107,3 +107,4 @@ if uploaded_file is not None:
         st.dataframe(df)
         st.download_button("📥 Download CSV", data=open(csv_path, "rb"),
                            file_name="vehicle_log.csv", mime="text/csv")
+
